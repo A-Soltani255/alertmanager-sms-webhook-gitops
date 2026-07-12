@@ -1,63 +1,94 @@
 # Alertmanager SMS Webhook GitOps
 
-A production-ready GitOps project for sending Kubernetes and application alerts from Prometheus Alertmanager to an SMS gateway.
+Production-ready GitOps project for sending important Kubernetes and application alerts from **Prometheus Alertmanager** to an external **SMS gateway**.
 
-This repository contains:
-
-- A Python Flask/Gunicorn SMS webhook for Alertmanager
-- Kubernetes manifests for deploying the webhook
-- kube-prometheus-stack Alertmanager configuration examples
-- Production Prometheus alert rules for Kubernetes and platform services
-- Kafka lag alerting with the current lag value included in the SMS message
-- Restricted Pod Security compatible test manifests
-- A complete operational runbook for build, deploy, test, troubleshoot, and rollback
+This repository contains the SMS webhook application, Kubernetes deployment manifests, kube-prometheus-stack Alertmanager examples, production Prometheus alert rules, restricted-cluster test manifests, and a complete operational runbook.
 
 ---
 
-## Project Goals
+## 1. What This Repository Does
 
-The goal of this project is to provide a clean, repeatable, GitOps-friendly way to send important monitoring alerts as SMS messages from a Kubernetes cluster.
+This project solves the following problem:
 
-It is designed for environments where:
+```text
+Prometheus detects a problem in Kubernetes or an application
+        ↓
+Alertmanager receives the firing alert
+        ↓
+Alertmanager routes selected alerts to an HTTP webhook
+        ↓
+The SMS webhook formats the alert
+        ↓
+The webhook calls the SMS gateway
+        ↓
+Engineers receive SMS notifications
+```
 
-- Kubernetes is managed by GitOps, for example Argo CD
-- Monitoring is based on kube-prometheus-stack
-- Alertmanager must send alerts to an HTTP webhook
-- The webhook must call an external SMS gateway
+The repository is designed for environments where:
+
+- Kubernetes monitoring is based on `kube-prometheus-stack`
+- Alertmanager is managed by Helm/GitOps
+- Argo CD deploys the monitoring configuration
 - The cluster may enforce restricted Pod Security policies
 - The environment may be air-gapped or partially offline
 - Alert noise and duplicate SMS messages must be controlled carefully
+- Important alerts such as Kafka lag, CrashLoopBackOff, ImagePullBackOff, and storage problems must reach engineers quickly
 
 ---
 
-## High-Level Architecture
+## 2. How to Read This Repository
+
+Start with this `README.md` first. It explains the purpose of the repository and the correct reading order.
+
+Then read the files in this order:
 
 ```text
-Prometheus
-  |
-  | fires alert
-  v
-Alertmanager
-  |
-  | webhook receiver
-  v
-sms-webhook-alertmanager
-  |
-  | HTTP request
-  v
-SMS Gateway
-  |
-  v
-Mobile Phones
+1. README.md
+   Understand the repository purpose, structure, and workflow.
+
+2. docs/RUNBOOK.md
+   Read the full zero-to-100 implementation guide.
+
+3. app/main.py
+   Understand how the Alertmanager webhook receives alerts and sends SMS.
+
+4. app/Dockerfile.gunicorn
+   Understand the production image build.
+
+5. deploy/kubernetes/webhook/
+   Review the Kubernetes Deployment, Service, ConfigMap, and Secret example.
+
+6. deploy/helm/values-alertmanager-sms.example.yaml
+   Review the Alertmanager routing configuration.
+
+7. deploy/prometheus-rules/additionalPrometheusRulesMap-production-final-with-kafka-lag-value.yaml
+   Review the production alert rules.
+
+8. scripts/
+   Use the helper scripts for build, render validation, rule audit, and Kafka lag testing.
 ```
 
-Prometheus evaluates alert rules.  
-Alertmanager groups, routes, inhibits, and deduplicates alerts.  
-The SMS webhook formats the alert and sends it to the SMS gateway.
+For a new engineer, the best path is:
+
+```text
+README.md → docs/RUNBOOK.md → deploy/kubernetes → deploy/helm → deploy/prometheus-rules → scripts
+```
+
+For troubleshooting, go directly to:
+
+```text
+docs/RUNBOOK.md → Troubleshooting section
+```
+
+For production deployment, follow:
+
+```text
+docs/RUNBOOK.md → Build image → Create secret → Deploy webhook → Configure Alertmanager → Add Prometheus rules → Validate end-to-end
+```
 
 ---
 
-## Repository Structure
+## 3. Repository Structure
 
 ```text
 alertmanager-sms-webhook-gitops/
@@ -68,6 +99,8 @@ alertmanager-sms-webhook-gitops/
 │   ├── Dockerfile
 │   ├── Dockerfile.gunicorn
 │   └── tests/
+│       ├── payload-single.json
+│       └── payload-kafka-lag.json
 │
 ├── deploy/
 │   ├── kubernetes/
@@ -94,86 +127,146 @@ alertmanager-sms-webhook-gitops/
 ├── docs/
 │   └── RUNBOOK.md
 │
-├── .gitignore
 ├── .gitattributes
+├── .gitignore
 ├── LICENSE
 └── README.md
 ```
 
 ---
 
-## Main Features
+## 4. Important Files and Their Purpose
 
-### Alertmanager SMS Webhook
-
-The webhook receives Alertmanager webhook payloads and sends formatted SMS messages through an external SMS gateway.
-
-Features:
-
-- Supports multiple alerts in one Alertmanager payload
-- Supports multiple destination phone numbers
-- Masks sensitive data in logs
-- Supports dry-run mode
-- Supports health and readiness endpoints
-- Supports configurable timezone
-- Supports message length limiting
-- Supports fallback phone numbers
-- Processes all alerts in the Alertmanager payload
-- Designed to run with Gunicorn in Kubernetes
-- Designed for GitOps deployment with Argo CD
+| Path | Purpose |
+|---|---|
+| `README.md` | Repository landing page and reading guide |
+| `docs/RUNBOOK.md` | Full detailed implementation and operations guide |
+| `app/main.py` | Python SMS webhook application |
+| `app/Dockerfile.gunicorn` | Recommended production Dockerfile |
+| `app/tests/` | Local test payloads for webhook validation |
+| `deploy/kubernetes/webhook/configmap.yaml` | Runtime webhook configuration |
+| `deploy/kubernetes/webhook/deployment.yaml` | Kubernetes Deployment for the webhook |
+| `deploy/kubernetes/webhook/service.yaml` | Internal ClusterIP Service for Alertmanager to call |
+| `deploy/kubernetes/webhook/secret.example.yaml` | Example secret structure only; do not commit real secrets |
+| `deploy/helm/values-alertmanager-sms.example.yaml` | Example Alertmanager routing configuration |
+| `deploy/prometheus-rules/` | Production Prometheus alert rules |
+| `scripts/build-and-push.sh` | Helper script for building and pushing the image |
+| `scripts/render-check.sh` | Helm rendering and validation helper |
+| `scripts/collect-monlog-rule-audit.sh` | Collect existing Prometheus rules, metrics, and targets for deduplication |
+| `scripts/kafka-lag-test-restricted-pod.yaml` | Restricted-policy-compatible Kafka lag test pod |
 
 ---
 
-### Production Alert Rules
+## 5. High-Level Architecture
 
-The repository includes an example production `additionalPrometheusRulesMap` for kube-prometheus-stack.
+```text
++-------------------+
+|    Prometheus     |
+| alert evaluation  |
++---------+---------+
+          |
+          | firing alert
+          v
++-------------------+
+|   Alertmanager    |
+| grouping/routing  |
++---------+---------+
+          |
+          | webhook receiver
+          v
++------------------------------+
+| sms-webhook-alertmanager     |
+| Python + Gunicorn            |
+| /send_sms                    |
+| /healthz /readyz             |
++--------------+---------------+
+               |
+               | HTTP request
+               v
++-------------------+
+|    SMS Gateway    |
++---------+---------+
+          |
+          v
++-------------------+
+| Mobile Engineers  |
++-------------------+
+```
 
-Covered areas include:
+---
 
-- Fast Kubernetes workload alerts
+## 6. Main Features
+
+### SMS Webhook
+
+The webhook:
+
+- Receives Alertmanager webhook payloads on `POST /send_sms`
+- Processes multiple alerts in one payload
+- Sends SMS to one or more phone numbers
+- Supports alert-specific phone numbers via `annotations.phone_numbers`
+- Supports fallback phone numbers via `DEFAULT_PHONE_NUMBERS`
+- Masks sensitive values in logs
+- Supports dry-run mode
+- Supports configurable timezone
+- Supports message length limiting
+- Supports health and readiness endpoints
+- Runs with Gunicorn in production
+- Is compatible with restricted Kubernetes policies
+
+### Alertmanager Routing
+
+The recommended routing model is:
+
+```text
+critical alerts → SMS
+warning alerts  → SMS only when sms="true"
+info alerts     → no SMS
+```
+
+This prevents SMS storms while still allowing important warning alerts to be sent.
+
+### Production Prometheus Rules
+
+The production rule file includes alerting logic for:
+
+- Fast Kubernetes workload failures
 - CrashLoopBackOff
-- ImagePullBackOff
-- PodNotReady without false alerts for Completed Job pods
+- ImagePullBackOff / ErrImagePull
+- PodNotReady without false alerts for completed Job pods
 - Unexpected Completed pods for non-Job workloads
-- Job failures
+- Failed Jobs
 - Long-running Jobs
-- Argo CD alerts
-- Redis alerts
-- Strimzi Kafka alerts
+- Argo CD health and sync problems
+- Redis health and performance
+- Strimzi Kafka health
 - Kafka consumer lag warning and critical alerts
-- Kafka lag value included in SMS description
-- PVC and storage-related alerts
+- Kafka lag value inside the SMS message
+- PVC capacity and prediction alerts
 - Monitoring-gap alerts for missing exporters
 
 ---
 
-### Kafka Lag SMS Support
+## 7. Important Design Decisions
 
-Kafka lag alerts include the current lag value in the alert description.
+### 7.1 Do Not Alert on Normal Completed Job Pods
 
-Example SMS text:
+A pod in this state is usually normal for a Job or CronJob:
 
 ```text
-Alert: KafkaConsumerLagWarning
-State: firing
-Severity: warning
-Summary: Kafka consumer group lag warning
-Description: Kafka consumer group sms-lag-test-group has current lag 6123 on topic sms-lag-test. Threshold: > 5000.
+0/1 Completed
 ```
 
-The lag value is rendered using Prometheus annotation templating:
+Therefore, the PodNotReady rule excludes:
 
-```yaml
-description: "Kafka consumer group {{ $labels.consumergroup }} has current lag {{ printf \"%.0f\" $value }} on topic {{ $labels.topic }}. Threshold: > 5000."
-```
+- `Succeeded` pods
+- Job-owned pods
 
----
+A separate rule detects unexpected Completed pods that are not owned by Jobs.
 
-## Important Design Decisions
+### 7.2 Do Not Put Dynamic Values in Labels
 
-### Do Not Put Dynamic Values in Labels
-
-Do not put dynamic values such as current Kafka lag in labels.
+Do not put current Kafka lag or other changing values in labels.
 
 Bad:
 
@@ -189,44 +282,59 @@ annotations:
   description: "Current lag is {{ printf \"%.0f\" $value }}"
 ```
 
-Dynamic labels can create new alert instances repeatedly and cause alert storms.
+Dynamic labels create new alert instances repeatedly and can cause alert storms.
 
----
+### 7.3 Pending Alerts Do Not Send SMS
 
-### Completed Job Pods Should Not Trigger PodNotReady SMS
-
-A pod in this state is usually normal for a completed Job or CronJob:
+Prometheus only sends alerts to Alertmanager after they become `firing`.
 
 ```text
-0/1 Completed
+pending → not sent to Alertmanager
+firing  → sent to Alertmanager
 ```
 
-Therefore, the fast PodNotReady rule excludes:
+So when testing SMS, always check whether the alert is still pending.
 
-- `Succeeded` pods
-- Job-owned pods
+### 7.4 `send_resolved` Is Disabled for SMS
 
-A separate alert is used for unexpected Completed pods that are not owned by Jobs.
+The recommended SMS receiver uses:
+
+```yaml
+send_resolved: false
+```
+
+This prevents extra recovery SMS messages and reduces duplicate-looking notifications.
 
 ---
 
-### Do Not Route All Warnings to SMS
+## 8. Prerequisites
 
-The recommended Alertmanager strategy is:
+You need:
+
+- Kubernetes cluster
+- kube-prometheus-stack installed
+- Prometheus Operator CRDs installed
+- Alertmanager enabled
+- Argo CD or another GitOps controller
+- Container registry access
+- SMS gateway URL, username, password, and sender/source number
+- `kubectl`
+- `helm`
+- `docker` or compatible build tool
+- `jq`
+- Git
+
+Recommended namespace used in examples:
 
 ```text
-critical alerts -> SMS
-warning alerts  -> SMS only when sms="true"
-info alerts     -> no SMS
+monlog
 ```
-
-This prevents SMS storms in busy Kubernetes clusters.
 
 ---
 
-## Quick Start
+## 9. Quick Start
 
-### 1. Build the Webhook Image
+### 9.1 Build the Webhook Image
 
 ```bash
 cd app
@@ -248,7 +356,7 @@ docker push 172.20.117.211:7049/prometheus/webhook/sms-webhook-alertmanager:1.1.
 
 ---
 
-### 2. Create the SMS Secret
+### 9.2 Create the SMS Secret
 
 Do not commit real secrets to Git.
 
@@ -265,7 +373,7 @@ kubectl -n monlog create secret generic sms-webhook-secret \
 
 ---
 
-### 3. Deploy the Webhook
+### 9.3 Deploy the Webhook
 
 Using Kustomize:
 
@@ -282,9 +390,9 @@ kubectl -n monlog rollout status deployment/sms-webhook-alertmanager
 
 ---
 
-### 4. Configure Alertmanager
+### 9.4 Configure Alertmanager
 
-Use the example file:
+Use this example as a reference:
 
 ```text
 deploy/helm/values-alertmanager-sms.example.yaml
@@ -302,61 +410,29 @@ receivers:
         send_resolved: false
 ```
 
-Recommended routing model:
+Recommended SMS routing:
 
 ```yaml
-route:
-  group_by:
-    - alertname
-    - namespace
-    - pod
-    - deployment
-    - statefulset
-    - daemonset
-    - job
-    - job_name
-    - ingress
-    - service
-    - consumergroup
-    - topic
-    - container
-    - reason
-  group_wait: 30s
-  group_interval: 5m
-  repeat_interval: 4h
-  receiver: 'null'
-  routes:
-    - receiver: 'null'
-      matchers:
-        - alertname = "Watchdog"
+routes:
+  - receiver: 'magfa-sms'
+    matchers:
+      - severity = "critical"
+    group_wait: 5s
+    group_interval: 1m
+    repeat_interval: 2h
 
-    - receiver: 'null'
-      matchers:
-        - alertname = "AlertmanagerFailedToSendAlerts"
-
-    - receiver: 'null'
-      matchers:
-        - alertname = "PrometheusDuplicateTimestamps"
-
-    - receiver: 'magfa-sms'
-      matchers:
-        - severity = "critical"
-      group_wait: 5s
-      group_interval: 1m
-      repeat_interval: 2h
-
-    - receiver: 'magfa-sms'
-      matchers:
-        - severity = "warning"
-        - sms = "true"
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 4h
+  - receiver: 'magfa-sms'
+    matchers:
+      - severity = "warning"
+      - sms = "true"
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
 ```
 
 ---
 
-### 5. Add Production Prometheus Rules
+### 9.5 Add Production Prometheus Rules
 
 Use:
 
@@ -364,19 +440,19 @@ Use:
 deploy/prometheus-rules/additionalPrometheusRulesMap-production-final-with-kafka-lag-value.yaml
 ```
 
-Merge its content under your existing kube-prometheus-stack:
+Merge it under your kube-prometheus-stack `values.yaml` key:
 
 ```yaml
 additionalPrometheusRulesMap:
 ```
 
-Do not create two separate top-level `additionalPrometheusRulesMap` keys.
+Do not create two duplicate top-level `additionalPrometheusRulesMap` keys.
 
 ---
 
-### 6. Deploy Through Argo CD
+### 9.6 Deploy Through GitOps
 
-Commit and push your changes:
+Commit and push:
 
 ```bash
 git add .
@@ -388,9 +464,9 @@ Then sync the Argo CD application.
 
 ---
 
-## Validation
+## 10. Validation Commands
 
-### Check Alertmanager Config
+### Check Alertmanager Generated Config
 
 ```bash
 kubectl -n monlog get secret alertmanager-kube-prometheus-stack-alertmanager \
@@ -407,9 +483,10 @@ send_resolved: false
 
 ---
 
-### Check Webhook Logs
+### Check Webhook Pod and Logs
 
 ```bash
+kubectl -n monlog get pods -l app=sms-webhook-alertmanager
 kubectl -n monlog logs deploy/sms-webhook-alertmanager -f
 ```
 
@@ -441,26 +518,54 @@ curl -s 'http://127.0.0.1:9093/api/v2/alerts' | jq
 
 ---
 
-## Testing Kafka Lag Alerts
+## 11. Testing
 
-For restricted Kubernetes clusters, use the manifest:
+### 11.1 Direct Webhook Test
+
+Port-forward the webhook:
+
+```bash
+kubectl -n monlog port-forward svc/sms-webhook-alertmanager 5000:5000
+```
+
+Send a test payload:
+
+```bash
+curl -s -X POST http://127.0.0.1:5000/send_sms \
+  -H 'Content-Type: application/json' \
+  --data-binary @app/tests/payload-single.json | jq
+```
+
+---
+
+### 11.2 Kafka Lag Test
+
+For restricted clusters, use:
 
 ```text
 scripts/kafka-lag-test-restricted-pod.yaml
 ```
 
-The test process is:
+The process is:
 
-1. Create a Kafka client pod compatible with restricted Pod Security
+```text
+1. Create a restricted-compatible Kafka client pod
 2. Create a test topic
-3. Create a test consumer group offset
+3. Create a consumer group with committed offset
 4. Produce messages without consuming them
-5. Verify `kafka_consumergroup_lag` in Prometheus
-6. Wait for `KafkaConsumerLagWarning` or `KafkaConsumerLagCritical`
+5. Confirm kafka_consumergroup_lag in Prometheus
+6. Wait for KafkaConsumerLagWarning or KafkaConsumerLagCritical
 7. Confirm SMS delivery
 8. Reset offset and delete test resources
+```
 
-Full steps are documented in:
+The Kafka lag alert includes the current lag count in the SMS:
+
+```text
+Kafka consumer group sms-lag-test-group has current lag 6123 on topic sms-lag-test. Threshold: > 5000.
+```
+
+Full instructions are in:
 
 ```text
 docs/RUNBOOK.md
@@ -468,29 +573,83 @@ docs/RUNBOOK.md
 
 ---
 
-## Full Runbook
+## 12. Troubleshooting Quick Reference
 
-The complete zero-to-100 guide is available here:
+### No SMS Received
 
-[docs/RUNBOOK.md](docs/RUNBOOK.md)
+Check in this order:
 
-The runbook includes:
+```text
+1. Is the alert firing in Prometheus?
+2. Is the alert visible in Alertmanager?
+3. Does the Alertmanager route match the alert labels?
+4. Is the webhook Service reachable from Alertmanager?
+5. Does the webhook log show the POST request?
+6. Is SMS_DRY_RUN=false?
+7. Are SMS credentials correct?
+8. Did the SMS gateway return HTTP 200?
+```
 
-- Repository structure
-- Image build and push
-- Air-gapped notes
-- Kubernetes deployment
-- Alertmanager routing
-- PrometheusRule design
-- Kafka lag testing
-- Completed Job pod false-positive prevention
-- Troubleshooting
-- Rollback
-- Production checklist
+Useful commands:
+
+```bash
+kubectl -n monlog logs deploy/sms-webhook-alertmanager --tail=100
+kubectl -n monlog get endpoints sms-webhook-alertmanager
+kubectl -n monlog get secret alertmanager-kube-prometheus-stack-alertmanager \
+  -o jsonpath='{.data.alertmanager\.yaml}' | base64 -d
+```
 
 ---
 
-## Security Notes
+### Alert Exists in Prometheus but No SMS
+
+Check the alert state:
+
+```bash
+curl -s 'http://127.0.0.1:9090/api/v1/alerts' \
+  | jq '.data.alerts[] | {alertname: .labels.alertname, state: .state, labels: .labels}'
+```
+
+If the state is:
+
+```text
+pending
+```
+
+then it has not been sent to Alertmanager yet.
+
+---
+
+### Kafka Lag Alert Does Not Fire
+
+Check that the metric exists:
+
+```bash
+curl -sG 'http://127.0.0.1:9090/api/v1/query' \
+  --data-urlencode 'query=sum by (namespace, consumergroup, topic) (kafka_consumergroup_lag)' \
+  | jq
+```
+
+If empty, Prometheus is not scraping Kafka lag metrics or the consumer group has no committed offset.
+
+---
+
+### Duplicate or Too Many SMS Messages
+
+Check:
+
+```text
+send_resolved must be false
+PARTIAL_FAILURE_HTTP_CODE should be 200
+Alertmanager group_by must include important labels
+Do not route all warning alerts to SMS
+Do not use dynamic values in labels
+Remove always-firing test alerts
+```
+
+---
+
+## 13. Security Notes
 
 Never commit real secrets.
 
@@ -499,7 +658,7 @@ This repository should only contain:
 ```text
 secret.example.yaml
 placeholder credentials
-example phone numbers
+example values
 ```
 
 Recommended production secret options:
@@ -510,21 +669,40 @@ Recommended production secret options:
 - SOPS
 - Vault integration
 
-Rotate any secret immediately if it is accidentally pushed to GitHub.
+Rotate credentials immediately if they are accidentally pushed to GitHub.
 
 ---
 
-## Recommended Git Workflow
+## 14. Recommended Git Workflow
 
-Create a development branch:
+Use `main` for stable production state.
+
+Use `develop` for changes:
 
 ```bash
 git checkout -b develop
 ```
 
-Make changes on `develop`, then open a Pull Request to `main`.
+Normal change flow:
 
-Recommended tags:
+```bash
+git checkout develop
+git pull
+
+# edit files
+
+git add .
+git commit -m "Describe the change"
+git push
+```
+
+Then open a Pull Request:
+
+```text
+develop → main
+```
+
+Recommended release tags:
 
 ```text
 v1.0.0  Initial production-ready GitOps SMS monitoring release
@@ -535,6 +713,27 @@ v1.3.0  Argo CD deployment improvements
 
 ---
 
-## License
+## 15. Full Documentation
+
+The complete implementation guide is here:
+
+[docs/RUNBOOK.md](docs/RUNBOOK.md)
+
+Read it when you need full details about:
+
+- Building the image
+- Air-gapped deployment
+- Kubernetes manifests
+- Alertmanager configuration
+- PrometheusRule design
+- Kafka lag testing
+- Completed Job pod false-positive prevention
+- Troubleshooting
+- Rollback
+- Production checklist
+
+---
+
+## 16. License
 
 This project is provided under the license defined in the `LICENSE` file.
