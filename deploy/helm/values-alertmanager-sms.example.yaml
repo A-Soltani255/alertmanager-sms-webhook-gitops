@@ -1,0 +1,88 @@
+alertmanager:
+  enabled: true
+  apiVersion: v2
+  config:
+    global:
+      resolve_timeout: 5m
+    inhibit_rules:
+      - source_matchers:
+          - 'severity = critical'
+        target_matchers:
+          - 'severity =~ warning|info'
+        equal:
+          - namespace
+          - alertname
+      - source_matchers:
+          - 'severity = warning'
+        target_matchers:
+          - 'severity = info'
+        equal:
+          - namespace
+          - alertname
+      - source_matchers:
+          - 'alertname = InfoInhibitor'
+        target_matchers:
+          - 'severity = info'
+        equal:
+          - namespace
+      - target_matchers:
+          - 'alertname = InfoInhibitor'
+      - source_matchers:
+          - 'severity = critical'
+        target_matchers:
+          - 'severity = warning'
+        equal:
+          - consumergroup
+          - topic
+    route:
+      group_by:
+        - alertname
+        - namespace
+        - pod
+        - deployment
+        - statefulset
+        - daemonset
+        - job
+        - job_name
+        - ingress
+        - service
+        - consumergroup
+        - topic
+        - container
+        - reason
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: 'null'
+      routes:
+        - receiver: 'null'
+          matchers:
+            - alertname = "Watchdog"
+        - receiver: 'null'
+          matchers:
+            - alertname = "AlertmanagerFailedToSendAlerts"
+        - receiver: 'null'
+          matchers:
+            - alertname = "PrometheusDuplicateTimestamps"
+        - receiver: 'magfa-sms'
+          matchers:
+            - severity = "critical"
+          group_wait: 5s
+          group_interval: 1m
+          repeat_interval: 2h
+        - receiver: 'magfa-sms'
+          matchers:
+            - severity = "warning"
+            - sms = "true"
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 4h
+    receivers:
+      - name: 'null'
+      - name: 'magfa-sms'
+        webhook_configs:
+          - url: 'http://sms-webhook-alertmanager.monlog.svc.cluster.local:5000/send_sms'
+            send_resolved: false
+    templates:
+      - '/etc/alertmanager/config/*.tmpl'
+  tplConfig: false

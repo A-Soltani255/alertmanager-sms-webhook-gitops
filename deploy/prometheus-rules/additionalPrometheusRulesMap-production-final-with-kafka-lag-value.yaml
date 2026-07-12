@@ -1,0 +1,886 @@
+# Production-oriented additionalPrometheusRulesMap generated from your monlog audit bundle.
+# Replace phone_numbers where needed.
+# Important: this file intentionally uses unique alert names to avoid collisions with your current rules.
+# Recommended Alertmanager SMS route:
+#   critical -> SMS
+#   warning only when sms="true" -> SMS
+
+additionalPrometheusRulesMap:
+  sms-fast-kubernetes-workload-alerts:
+    groups:
+      - name: sms-fast-kubernetes-workload-alerts
+        rules:
+          # Applies to ALL namespaces. No namespace allowlist is used here.
+          # Completed Job/CronJob pods are excluded from PodNotReady to avoid false SMS alerts.
+          - alert: SmsFastPodImagePullBackOff
+            expr: |
+              max_over_time(kube_pod_container_status_waiting_reason{reason=~"ImagePullBackOff|ErrImagePull"}[2m]) == 1
+            for: 1m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Pod image pull failed"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} container {{ $labels.container }} has image pull problem: {{ $labels.reason }}."
+
+          - alert: SmsFastPodCrashLoopBackOff
+            expr: |
+              max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}[2m]) == 1
+            for: 1m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Pod is in CrashLoopBackOff"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} container {{ $labels.container }} is in CrashLoopBackOff."
+
+          - alert: SmsFastContainerRestartingFrequently
+            expr: |
+              (
+                increase(kube_pod_container_status_restarts_total[10m]) > 3
+              )
+              unless on (namespace, pod)
+              (
+                kube_pod_owner{owner_kind="Job"}
+              )
+            for: 2m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Container is restarting frequently"
+              description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} restarted more than 3 times in 10 minutes."
+
+          - alert: SmsFastPodNotReady
+            expr: |
+              (
+                kube_pod_status_ready{condition="true"} == 0
+              )
+              and on (namespace, pod)
+              (
+                kube_pod_status_phase{phase=~"Pending|Running|Unknown"} == 1
+              )
+              unless on (namespace, pod)
+              (
+                kube_pod_owner{owner_kind="Job"}
+              )
+            for: 3m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Pod is not ready"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has not been Ready for more than 3 minutes. Completed Job/CronJob pods are excluded."
+
+          - alert: SmsFastPodCompletedUnexpectedly
+            expr: |
+              (
+                kube_pod_status_phase{phase="Succeeded"} == 1
+              )
+              unless on (namespace, pod)
+              (
+                kube_pod_owner{owner_kind="Job"}
+              )
+            for: 2m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Pod completed unexpectedly"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is Completed/Succeeded but is not owned by a Job. This may indicate a long-running workload container exited."
+
+          - alert: SmsFastDeploymentUnavailable
+            expr: |
+              (
+                kube_deployment_spec_replicas > 0
+              )
+              and on (namespace, deployment)
+              (
+                (kube_deployment_spec_replicas - kube_deployment_status_replicas_available) > 0
+              )
+            for: 3m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Deployment has unavailable replicas"
+              description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has unavailable replicas for more than 3 minutes."
+
+          - alert: SmsFastStatefulSetUnavailable
+            expr: |
+              (
+                kube_statefulset_replicas > 0
+              )
+              and on (namespace, statefulset)
+              (
+                (kube_statefulset_replicas - kube_statefulset_status_replicas_ready) > 0
+              )
+            for: 3m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "StatefulSet has unavailable replicas"
+              description: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} has unavailable replicas for more than 3 minutes."
+
+          - alert: SmsFastDaemonSetUnavailable
+            expr: |
+              (
+                kube_daemonset_status_desired_number_scheduled > 0
+              )
+              and on (namespace, daemonset)
+              (
+                (kube_daemonset_status_desired_number_scheduled - kube_daemonset_status_number_available) > 0
+              )
+            for: 3m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "DaemonSet has unavailable pods"
+              description: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} has unavailable pods for more than 3 minutes."
+
+          - alert: SmsFastJobFailed
+            expr: |
+              kube_job_failed > 0
+            for: 0m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Kubernetes Job failed"
+              description: "Job {{ $labels.namespace }}/{{ $labels.job_name }} has failed. Completed/Succeeded Jobs do not alert."
+
+          - alert: SmsFastJobRunningTooLong
+            expr: |
+              (
+                (time() - kube_job_status_start_time) > 3600
+              )
+              and on (namespace, job_name)
+              (
+                kube_job_status_active > 0
+              )
+            for: 5m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Kubernetes Job running too long"
+              description: "Job {{ $labels.namespace }}/{{ $labels.job_name }} has been active for more than 1 hour."
+
+  argocd-alerts:
+    groups:
+      - name: argocd-alerts
+        rules:
+          # Existing rules already found in your cluster:
+          # - ArgoAppMissing
+          # - ArgoAppNotSynced
+          # Do not duplicate them here. Fix the existing annotation/template instead if needed.
+          - alert: ArgoCDApplicationDegraded
+            expr: |
+              argocd_app_info{health_status=~"Degraded|Missing|Unknown"} == 1
+            for: 10m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Argo CD application health is bad"
+              description: "Argo CD application {{ $labels.name }} in project {{ $labels.project }} has health_status={{ $labels.health_status }} and sync_status={{ $labels.sync_status }}."
+
+          - alert: ArgoCDSyncOperationFailed
+            expr: |
+              sum by (namespace, name, project, phase) (increase(argocd_app_sync_total{phase!="Succeeded"}[15m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Argo CD application sync failed"
+              description: "Argo CD application {{ $labels.name }} in project {{ $labels.project }} had a failed sync operation. Phase={{ $labels.phase }}."
+
+          - alert: ArgoCDGitFetchFailures
+            expr: |
+              sum by (namespace, pod, repo) (increase(argocd_git_fetch_fail_total[10m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Argo CD Git fetch failures"
+              description: "Argo CD repo-server pod {{ $labels.namespace }}/{{ $labels.pod }} is failing Git fetch operations for repo {{ $labels.repo }}."
+
+          - alert: ArgoCDGitLsRemoteFailures
+            expr: |
+              sum by (namespace, pod, repo) (increase(argocd_git_lsremote_fail_total[10m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Argo CD Git ls-remote failures"
+              description: "Argo CD repo-server pod {{ $labels.namespace }}/{{ $labels.pod }} is failing Git ls-remote operations for repo {{ $labels.repo }}."
+
+          - alert: ArgoCDClusterConnectionLost
+            expr: |
+              argocd_cluster_connection_status != 1
+            for: 5m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Argo CD cluster connection is unhealthy"
+              description: "Argo CD cannot connect cleanly to cluster server {{ $labels.server }}."
+
+          - alert: ArgoCDRedisRequestFailures
+            expr: |
+              sum by (namespace, pod, initiator) (increase(argocd_redis_request_total{failed="true"}[10m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Argo CD Redis request failures"
+              description: "Argo CD component {{ $labels.initiator }} on pod {{ $labels.namespace }}/{{ $labels.pod }} has Redis request failures."
+
+          - alert: ArgoCDOrphanedResourcesDetected
+            expr: |
+              argocd_app_orphaned_resources_count > 0
+            for: 30m
+            labels:
+              severity: warning
+              category: argocd
+              sms: "false"
+            annotations:
+              summary: "Argo CD orphaned resources detected"
+              description: "Argo CD application {{ $labels.name }} has {{ $value }} orphaned resources."
+
+  redis-alerts:
+    groups:
+      - name: redis-alerts
+        rules:
+          - alert: RedisExporterDown
+            expr: |
+              redis_up == 0
+            for: 2m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Redis exporter cannot reach Redis"
+              description: "Redis exporter for {{ $labels.namespace }}/{{ $labels.pod }} reports redis_up=0."
+
+          - alert: RedisMemoryUsageHigh
+            expr: |
+              redis_memory_max_bytes > 0 and (redis_memory_used_bytes / redis_memory_max_bytes) * 100 > 85
+            for: 10m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Redis memory usage high"
+              description: "Redis {{ $labels.namespace }}/{{ $labels.pod }} is using more than 85% of maxmemory."
+
+          - alert: RedisMemoryUsageCritical
+            expr: |
+              redis_memory_max_bytes > 0 and (redis_memory_used_bytes / redis_memory_max_bytes) * 100 > 95
+            for: 5m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Redis memory usage critical"
+              description: "Redis {{ $labels.namespace }}/{{ $labels.pod }} is using more than 95% of maxmemory."
+
+          - alert: RedisBlockedClients
+            expr: |
+              redis_blocked_clients > 0
+            for: 5m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Redis has blocked clients"
+              description: "Redis {{ $labels.namespace }}/{{ $labels.pod }} has blocked clients for more than 5 minutes."
+
+          - alert: RedisRejectedConnections
+            expr: |
+              increase(redis_rejected_connections_total[5m]) > 0
+            for: 0m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Redis rejected client connections"
+              description: "Redis {{ $labels.namespace }}/{{ $labels.pod }} rejected client connections in the last 5 minutes."
+
+          - alert: RedisEvictionsDetected
+            expr: |
+              increase(redis_evicted_keys_total[5m]) > 0
+            for: 0m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Redis key evictions detected"
+              description: "Redis {{ $labels.namespace }}/{{ $labels.pod }} evicted keys in the last 5 minutes."
+
+          - alert: RedisReplicationLinkDown
+            expr: |
+              redis_master_link_up == 0
+            for: 2m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Redis replication link down"
+              description: "Redis replica {{ $labels.namespace }}/{{ $labels.pod }} cannot reach master {{ $labels.master_host }}:{{ $labels.master_port }}."
+
+          - alert: RedisRDBLastSaveFailed
+            expr: |
+              redis_rdb_last_bgsave_status == 0
+            for: 5m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Redis RDB background save failed"
+              description: "Redis {{ $labels.namespace }}/{{ $labels.pod }} reports last RDB background save failed."
+
+          - alert: RedisAOFRewriteFailed
+            expr: |
+              redis_aof_last_bgrewrite_status == 0
+            for: 5m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Redis AOF rewrite failed"
+              description: "Redis {{ $labels.namespace }}/{{ $labels.pod }} reports last AOF rewrite failed."
+
+          - alert: RedisCommandErrorsHigh
+            expr: |
+              sum by (namespace, pod, cmd) (increase(redis_commands_failed_calls_total[5m])) > 10
+            for: 2m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "false"
+            annotations:
+              summary: "Redis command errors are high"
+              description: "Redis {{ $labels.namespace }}/{{ $labels.pod }} command {{ $labels.cmd }} failed more than 10 times in 5 minutes."
+
+  strimzi-kafka-alerts:
+    groups:
+      - name: strimzi-kafka-alerts
+        rules:
+          # This replaces the many per-consumer-group rules currently in your values file.
+          # Remove the old KafkaConsumerGroupLagWarning_* and KafkaConsumerGroupLagCritical_* rules if you enable these.
+          - alert: KafkaConsumerLagWarning
+            expr: |
+              sum by (namespace, consumergroup, topic) (kafka_consumergroup_lag{consumergroup!=""}) > 5000
+            for: 2m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Kafka consumer group lag warning"
+              description: "Kafka consumer group {{ $labels.consumergroup }} has current lag {{ printf \"%.0f\" $value }} on topic {{ $labels.topic }}. Threshold: > 5000."
+
+          - alert: KafkaConsumerLagCritical
+            expr: |
+              sum by (namespace, consumergroup, topic) (kafka_consumergroup_lag{consumergroup!=""}) > 60000
+            for: 1m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Kafka consumer group lag critical"
+              description: "Kafka consumer group {{ $labels.consumergroup }} has current lag {{ printf \"%.0f\" $value }} on topic {{ $labels.topic }}. Threshold: > 60000."
+
+          - alert: KafkaUnderReplicatedPartitions
+            expr: |
+              sum by (namespace, strimzi_io_cluster, topic) (kafka_cluster_partition_underreplicated) > 0
+            for: 2m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Kafka has under-replicated partitions"
+              description: "Kafka cluster {{ $labels.strimzi_io_cluster }} topic {{ $labels.topic }} has under-replicated partitions."
+
+          - alert: KafkaPartitionsUnderMinISR
+            expr: |
+              sum by (namespace, strimzi_io_cluster, topic) (kafka_cluster_partition_underminisr) > 0
+            for: 2m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Kafka partitions are under min ISR"
+              description: "Kafka cluster {{ $labels.strimzi_io_cluster }} topic {{ $labels.topic }} has partitions under min ISR."
+
+          - alert: KafkaPartitionsAtMinISR
+            expr: |
+              sum by (namespace, strimzi_io_cluster, topic) (kafka_cluster_partition_atminisr) > 0
+            for: 5m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Kafka partitions are at min ISR"
+              description: "Kafka cluster {{ $labels.strimzi_io_cluster }} topic {{ $labels.topic }} has partitions at min ISR."
+
+          - alert: KafkaActiveControllerNotOne
+            expr: |
+              sum by (namespace, strimzi_io_cluster) (kafka_controller_kafkacontroller_activecontrollercount) != 1
+            for: 2m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Kafka active controller count is not 1"
+              description: "Kafka cluster {{ $labels.strimzi_io_cluster }} active controller count is not exactly one."
+
+          - alert: KafkaNetworkRequestErrorsHigh
+            expr: |
+              sum by (namespace, strimzi_io_cluster, request, error) (increase(kafka_network_requestmetrics_errors_total{error!="NONE"}[10m])) > 20
+            for: 5m
+            labels:
+              severity: warning
+              category: kafka
+              sms: "false"
+            annotations:
+              summary: "Kafka network request errors are high"
+              description: "Kafka cluster {{ $labels.strimzi_io_cluster }} request {{ $labels.request }} has frequent error {{ $labels.error }}."
+
+          - alert: StrimziCertificateExpiresSoon
+            expr: |
+              ((strimzi_certificate_expiration_timestamp_ms / 1000) - time()) < 604800
+            for: 1h
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Strimzi certificate expires within 7 days"
+              description: "Strimzi certificate {{ $labels.type }} for cluster {{ $labels.cluster }} expires within 7 days."
+
+          - alert: StrimziReconciliationFailures
+            expr: |
+              sum by (namespace, kind) (increase(strimzi_reconciliations_total[10m]) - increase(strimzi_reconciliations_successful_total[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Strimzi reconciliation failures"
+              description: "Strimzi reconciliation failures detected for kind {{ $labels.kind }}."
+
+          - alert: StrimziResourceNotReady
+            expr: |
+              strimzi_resource_state != 1
+            for: 10m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Strimzi resource is not ready"
+              description: "Strimzi resource {{ $labels.kind }} {{ $labels.exported_namespace }}/{{ $labels.name }} is not ready. Reason={{ $labels.reason }}."
+
+  storage-openebs-pvc-alerts:
+    groups:
+      - name: storage-openebs-pvc-alerts
+        rules:
+          - alert: PVCStorageAlmostFull
+            expr: |
+              100 * kubelet_volume_stats_available_bytes{persistentvolumeclaim!=""} / kubelet_volume_stats_capacity_bytes{persistentvolumeclaim!=""} < 15
+            for: 10m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "PVC free space below 15%"
+              description: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has less than 15% free space on node {{ $labels.node }}."
+
+          - alert: PVCStorageCritical
+            expr: |
+              100 * kubelet_volume_stats_available_bytes{persistentvolumeclaim!=""} / kubelet_volume_stats_capacity_bytes{persistentvolumeclaim!=""} < 5
+            for: 5m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "PVC free space below 5%"
+              description: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has less than 5% free space on node {{ $labels.node }}."
+
+          - alert: PVCInodesAlmostFull
+            expr: |
+              100 * kubelet_volume_stats_inodes_free{persistentvolumeclaim!=""} / kubelet_volume_stats_inodes{persistentvolumeclaim!=""} < 15
+            for: 10m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "false"
+            annotations:
+              summary: "PVC free inodes below 15%"
+              description: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has less than 15% free inodes."
+
+          - alert: PVCNotBound
+            expr: |
+              kube_persistentvolumeclaim_status_phase{phase=~"Pending|Lost"} == 1
+            for: 3m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "PVC is not Bound"
+              description: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is in phase {{ $labels.phase }}."
+
+          - alert: PVFailedOrReleased
+            expr: |
+              kube_persistentvolume_status_phase{phase=~"Failed|Released"} == 1
+            for: 5m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "PersistentVolume is Failed or Released"
+              description: "PersistentVolume {{ $labels.persistentvolume }} is in phase {{ $labels.phase }}."
+
+          - alert: OpenEBSLVMControllerUnavailable
+            expr: |
+              (kube_deployment_spec_replicas{namespace="openebs",deployment="openebs-lvm-localpv-controller"} - kube_deployment_status_replicas_available{namespace="openebs",deployment="openebs-lvm-localpv-controller"}) > 0
+            for: 3m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "OpenEBS LVM controller unavailable"
+              description: "OpenEBS LVM LocalPV controller has unavailable replicas."
+
+          - alert: OpenEBSLVMNodePluginUnavailable
+            expr: |
+              (kube_daemonset_status_desired_number_scheduled{namespace="openebs",daemonset="openebs-lvm-localpv-node"} - kube_daemonset_status_number_available{namespace="openebs",daemonset="openebs-lvm-localpv-node"}) > 0
+            for: 3m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "OpenEBS LVM node plugin unavailable"
+              description: "OpenEBS LVM LocalPV node plugin is unavailable on one or more nodes."
+
+  component-workload-health-alerts:
+    groups:
+      - name: component-workload-health-alerts
+        rules:
+          - alert: ConsulServerReplicasUnavailable
+            expr: |
+              (kube_statefulset_replicas{namespace=~"consul|test-kasra|test-shahkar",statefulset=~".*consul.*server.*"} - kube_statefulset_status_replicas_ready{namespace=~"consul|test-kasra|test-shahkar",statefulset=~".*consul.*server.*"}) > 0
+            for: 3m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Consul server replicas unavailable"
+              description: "Consul StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} has unavailable replicas."
+
+          - alert: RabbitMQWorkloadUnavailable
+            expr: |
+              ((kube_deployment_spec_replicas{namespace=~"rabbitmq|test-shahkar",deployment=~".*rabbitmq.*"} - kube_deployment_status_replicas_available{namespace=~"rabbitmq|test-shahkar",deployment=~".*rabbitmq.*"}) > 0)
+              or
+              ((kube_statefulset_replicas{namespace=~"test-kasra",statefulset=~".*rabbitmq.*"} - kube_statefulset_status_replicas_ready{namespace=~"test-kasra",statefulset=~".*rabbitmq.*"}) > 0)
+            for: 3m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "RabbitMQ workload unavailable"
+              description: "RabbitMQ workload has unavailable replicas. Namespace={{ $labels.namespace }}."
+
+          - alert: LogstashWorkloadUnavailable
+            expr: |
+              (kube_statefulset_replicas{namespace="elastic-system",statefulset="eck-logstash-logstash"} - kube_statefulset_status_replicas_ready{namespace="elastic-system",statefulset="eck-logstash-logstash"}) > 0
+            for: 3m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Logstash workload unavailable"
+              description: "Logstash StatefulSet elastic-system/eck-logstash-logstash has unavailable replicas."
+
+          - alert: FluentdWorkloadMissing
+            expr: |
+              absent(kube_daemonset_status_desired_number_scheduled{namespace=~"fluentd|logging|monlog",daemonset=~".*fluentd.*"})
+            for: 30m
+            labels:
+              severity: info
+              category: monitoring-gap
+              sms: "false"
+            annotations:
+              summary: "Fluentd DaemonSet not discovered"
+              description: "No Fluentd DaemonSet was found by kube-state-metrics in namespaces fluentd/logging/monlog. Your audit bundle also showed no fluentd_* metrics."
+
+  future-rabbitmq-metrics-alerts:
+    groups:
+      - name: future-rabbitmq-metrics-alerts
+        rules:
+          # These will stay inactive until RabbitMQ Prometheus metrics are exposed.
+          - alert: RabbitMQMetricsMissing
+            expr: |
+              absent(rabbitmq_build_info)
+            for: 30m
+            labels:
+              severity: info
+              category: monitoring-gap
+              sms: "false"
+            annotations:
+              summary: "RabbitMQ metrics are not scraped"
+              description: "No rabbitmq_* metrics were found. Enable RabbitMQ Prometheus plugin/exporter and a ServiceMonitor for full RabbitMQ alerting."
+
+          - alert: RabbitMQMemoryAlarm
+            expr: |
+              rabbitmq_node_mem_alarm == 1
+            for: 2m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "RabbitMQ memory alarm"
+              description: "RabbitMQ node {{ $labels.node }} has memory alarm active."
+
+          - alert: RabbitMQDiskFreeAlarm
+            expr: |
+              rabbitmq_node_disk_free_alarm == 1
+            for: 2m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "RabbitMQ disk free alarm"
+              description: "RabbitMQ node {{ $labels.node }} has disk free alarm active."
+
+          - alert: RabbitMQQueueBacklogHigh
+            expr: |
+              rabbitmq_queue_messages_ready > 10000
+            for: 10m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "RabbitMQ queue backlog high"
+              description: "RabbitMQ queue {{ $labels.queue }} has more than 10000 ready messages."
+
+          - alert: RabbitMQQueueNoConsumers
+            expr: |
+              rabbitmq_queue_consumers == 0 and rabbitmq_queue_messages_ready > 0
+            for: 10m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "RabbitMQ queue has messages but no consumers"
+              description: "RabbitMQ queue {{ $labels.queue }} has ready messages but no consumers."
+
+  future-consul-metrics-alerts:
+    groups:
+      - name: future-consul-metrics-alerts
+        rules:
+          # These will stay inactive until Consul metrics are exposed.
+          - alert: ConsulMetricsMissing
+            expr: |
+              absent(consul_raft_leader)
+            for: 30m
+            labels:
+              severity: info
+              category: monitoring-gap
+              sms: "false"
+            annotations:
+              summary: "Consul metrics are not scraped"
+              description: "No consul_* metrics were found. Enable Consul telemetry/exporter and a ServiceMonitor for full Consul alerting."
+
+          - alert: ConsulNoLeader
+            expr: |
+              sum(consul_raft_leader) == 0
+            for: 2m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Consul has no Raft leader"
+              description: "Consul cluster has no Raft leader."
+
+          - alert: ConsulMultipleLeaders
+            expr: |
+              sum(consul_raft_leader) > 1
+            for: 2m
+            labels:
+              severity: critical
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Consul has multiple Raft leaders"
+              description: "Consul reports more than one Raft leader."
+
+  future-logstash-fluentd-metrics-alerts:
+    groups:
+      - name: future-logstash-fluentd-metrics-alerts
+        rules:
+          # These will stay inactive until Logstash/Fluentd metrics are exposed.
+          - alert: LogstashMetricsMissing
+            expr: |
+              absent(logstash_node_info)
+            for: 30m
+            labels:
+              severity: info
+              category: monitoring-gap
+              sms: "false"
+            annotations:
+              summary: "Logstash metrics are not scraped"
+              description: "No logstash_* metrics were found. Expose Logstash metrics on 9600 with a ServiceMonitor for JVM/pipeline alerting."
+
+          - alert: LogstashJVMHeapHigh
+            expr: |
+              logstash_node_stats_jvm_mem_heap_used_percent > 85
+            for: 10m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Logstash JVM heap usage high"
+              description: "Logstash JVM heap usage is above 85%."
+
+          - alert: FluentdMetricsMissing
+            expr: |
+              absent(fluentd_output_status_buffer_queue_length)
+            for: 30m
+            labels:
+              severity: info
+              category: monitoring-gap
+              sms: "false"
+            annotations:
+              summary: "Fluentd metrics are not scraped"
+              description: "No fluentd_* metrics were found. Enable Fluentd Prometheus plugin and a ServiceMonitor for output/buffer alerting."
+
+          - alert: FluentdOutputRetryIncreasing
+            expr: |
+              increase(fluentd_output_status_retry_count[10m]) > 0
+            for: 5m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Fluentd output retries are increasing"
+              description: "Fluentd output {{ $labels.plugin_id }} retry count is increasing."
+
+          - alert: FluentdBufferQueueHigh
+            expr: |
+              fluentd_output_status_buffer_queue_length > 20
+            for: 10m
+            labels:
+              severity: warning
+              category: custom-alert
+              sms: "true"
+            annotations:
+              phone_numbers: "0912..."
+              summary: "Fluentd buffer queue high"
+              description: "Fluentd output {{ $labels.plugin_id }} buffer queue length is high."

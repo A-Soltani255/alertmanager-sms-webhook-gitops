@@ -1,0 +1,24 @@
+{
+  "receiver": "magfa-sms",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "SmsFastPodImagePullBackOff",
+        "severity": "critical",
+        "namespace": "shahkar",
+        "pod": "apim-gateway-core-abc123",
+        "container": "apim-gateway-core",
+        "reason": "ImagePullBackOff"
+      },
+      "annotations": {
+        "phone_numbers": "0912...",
+        "summary": "Pod image pull failed",
+        "description": "Pod shahkar/apim-gateway-core-abc123 container apim-gateway-core has image pull problem: ImagePullBackOff."
+      },
+      "startsAt": "2026-07-11T14:50:38Z",
+      "endsAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}

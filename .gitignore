@@ -1,0 +1,12 @@
+.env
+*.env
+*.pyc
+__pycache__/
+*.tar.gz
+*.tgz
+.DS_Store
+.vscode/
+.idea/
+# Do not commit live credentials.
+deploy/kubernetes/webhook/secret.yaml
+secret/sms-webhook-secret.yaml

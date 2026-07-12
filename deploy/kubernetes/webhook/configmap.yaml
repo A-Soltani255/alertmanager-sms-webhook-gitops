@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sms-webhook-config
+  namespace: monlog
+  labels:
+    app: sms-webhook-alertmanager
+data:
+  LOG_LEVEL: "INFO"
+  LOCAL_TIMEZONE: "Asia/Tehran"
+  SMS_DRY_RUN: "false"
+  SMS_TIMEOUT_SECONDS: "15"
+  MAX_MESSAGE_CHARS: "700"
+  SMS_SUCCESS_STATUS_CODES: "200"
+  PARTIAL_FAILURE_HTTP_CODE: "200"
+  DEFAULT_PHONE_NUMBERS: "0912..."
+  CLUSTER_NAME: "shahkar"

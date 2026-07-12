@@ -1,0 +1,24 @@
+{
+  "receiver": "magfa-sms",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "KafkaConsumerLagWarning",
+        "severity": "warning",
+        "sms": "true",
+        "namespace": "kafka",
+        "consumergroup": "sms-lag-test-group",
+        "topic": "sms-lag-test"
+      },
+      "annotations": {
+        "phone_numbers": "0912...",
+        "summary": "Kafka consumer group lag warning",
+        "description": "Kafka consumer group sms-lag-test-group has current lag 6123 on topic sms-lag-test. Threshold: > 5000."
+      },
+      "startsAt": "2026-07-11T14:50:38Z",
+      "endsAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}
