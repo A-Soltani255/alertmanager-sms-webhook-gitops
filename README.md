@@ -349,9 +349,9 @@ Example:
 
 ```bash
 docker build -f Dockerfile.gunicorn \
-  -t 172.20.117.211:7049/prometheus/webhook/sms-webhook-alertmanager:1.1.1 .
+  -t 192.168.10.10:7049/prometheus/webhook/sms-webhook-alertmanager:1.1.1 .
 
-docker push 172.20.117.211:7049/prometheus/webhook/sms-webhook-alertmanager:1.1.1
+docker push 192.168.10.10:7049/prometheus/webhook/sms-webhook-alertmanager:1.1.1
 ```
 
 ---
