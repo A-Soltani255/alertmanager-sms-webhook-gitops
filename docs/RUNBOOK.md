@@ -274,7 +274,7 @@ The app:
 | `DEFAULT_PHONE_NUMBERS` | `0912...` | Fallback phone numbers |
 | `LOCAL_TIMEZONE` | `Asia/Tehran` | SMS timestamp timezone |
 | `MAX_MESSAGE_CHARS` | `700` | SMS truncation length |
-| `CLUSTER_NAME` | `shahkar` | Cluster name replacement in descriptions |
+| `CLUSTER_NAME` | `test` | Cluster name replacement in descriptions |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 ### Why `PARTIAL_FAILURE_HTTP_CODE=200`
@@ -300,7 +300,7 @@ send_resolved: false
 Set variables:
 
 ```bash
-export REGISTRY='172.20.117.211:7049'
+export REGISTRY='192.168.10.10:7049'
 export IMAGE_NAME='prometheus/webhook/sms-webhook-alertmanager'
 export VERSION='1.3.0'
 export IMAGE="${REGISTRY}/${IMAGE_NAME}:${VERSION}"
@@ -373,7 +373,7 @@ data:
   SMS_SUCCESS_STATUS_CODES: "200"
   PARTIAL_FAILURE_HTTP_CODE: "200"
   DEFAULT_PHONE_NUMBERS: "0912..."
-  CLUSTER_NAME: "shahkar"
+  CLUSTER_NAME: "test"
 ```
 
 ### Deployment
@@ -408,7 +408,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: sms-webhook-alertmanager
-          image: 172.20.117.211:7049/prometheus/webhook/sms-webhook-alertmanager:1.3.0
+          image: 192.168.10.10:7049/prometheus/webhook/sms-webhook-alertmanager:1.3.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -797,8 +797,8 @@ Sms-test1
 Remove old per-consumer Kafka lag rules if replacing them with generic rules:
 
 ```text
-KafkaConsumerGroupLagWarning_shahkar
-KafkaConsumerGroupLagCritical_shahkar
+KafkaConsumerGroupLagWarning_test
+KafkaConsumerGroupLagCritical_test
 KafkaConsumerGroupLagWarning_dis_bank
 KafkaConsumerGroupLagCritical_dis_bank
 ...
@@ -978,7 +978,7 @@ Expected:
 ```text
 SMS_DRY_RUN=false
 PARTIAL_FAILURE_HTTP_CODE=200
-CLUSTER_NAME=shahkar
+CLUSTER_NAME=test
 MAX_MESSAGE_CHARS=700
 ```
 
@@ -1102,14 +1102,14 @@ Not CrashLoopBackOff.
 Patch a deployment to a bad image:
 
 ```bash
-kubectl -n shahkar set image deployment/apim-gateway-core \
+kubectl -n test set image deployment/apim-gateway-core \
   apim-gateway-core=not-exist.local/apim-gateway-core:notfound
 ```
 
 Watch pod:
 
 ```bash
-kubectl -n shahkar get pod -w
+kubectl -n test get pod -w
 ```
 
 Check Prometheus:
@@ -1130,7 +1130,7 @@ Then check Alertmanager and webhook logs.
 ### Roll back image
 
 ```bash
-kubectl -n shahkar rollout undo deployment/apim-gateway-core
+kubectl -n test rollout undo deployment/apim-gateway-core
 ```
 
 ---
@@ -1512,7 +1512,7 @@ A pod in `0/1 Completed` is normal for Job/CronJob pods. Use the final `SmsFastP
 
 ```bash
 kubectl -n monlog set image deployment/sms-webhook-alertmanager \
-  sms-webhook-alertmanager=172.20.117.211:7049/prometheus/webhook/sms-webhook-alertmanager:PREVIOUS_TAG
+  sms-webhook-alertmanager=192.168.10.10:7049/prometheus/webhook/sms-webhook-alertmanager:PREVIOUS_TAG
 ```
 
 ### Roll back with Git
